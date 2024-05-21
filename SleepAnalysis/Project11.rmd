@@ -1,0 +1,451 @@
+
+---
+title: "Investigating the relationship between sleep quality and various health outcomes"
+author: "Yamuna Dhungana"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warning=F,message=F)
+```
+
+Analyzing the NHANES dataset to investigate the relationship between sleep quality and various health outcomes involves implementing different classification algorithms, including Logistic Regression, Neural Network, K-Nearest Neighbors (K-NN), Linear Discriminant Analysis (LDA), and Quadratic Discriminant Analysis (QDA). The goal is to determine how each model performs in predicting the binary variable SleepTrouble.
+
+a)  For each model, we will follow these steps:
+
+Data Split: Divide the dataset into training (90%) and validation (10%) sets.
+
+Feature Selection: Choose a subset of relevant variables to build the classifier for SleepTrouble on the training data.
+
+Model Training: Implement the selected classification algorithm on the training data.
+
+b)  After building each model, evaluate its performance on the test data. Assess metrics such as accuracy, precision, recall, and F1-score to understand how effectively it predicts sleep trouble.
+
+c)  Create an appropriate visualization of the model. This could include visualizing decision boundaries, confusion matrices, or other relevant plots to aid in understanding the model's behavior.
+
+d)  Interpret the results to gain insights into people's sleeping habits. This might involve analyzing which features are most influential in predicting sleep trouble, the strengths and weaknesses of each model, and any patterns or correlations that emerge from the analysis. These insights can help us better understand the factors affecting sleep quality in the population studied.
+
+## Data Exploration:
+
+*The NHANES dataset comprises 76 columns and 10,000 rows, featuring some missing values (NA). To prepare the data for analysis, I adopted a stepwise variable selection approach for distinct subgroups within NHANES, which encompassed demographic, physical measurement, health, and lifestyle variables.For each subgroup, I executed stepwise regression using the 'olsrr' package, employing the 'ols_step_forward_p' function to iteratively include variables in the model. Variables were selected based on their influence, as measured by C(p).*
+
+```{r}
+library(dplyr)
+library(NHANES)
+library(caTools)
+library(neuralnet)
+library(ROCR)
+library(pROC)
+data("NHANES")
+
+original <- (NHANES)
+
+# subsetting the data
+
+# mydata <- original %>% 
+#   select(SleepTrouble,HHIncome, Age, BMI, MaritalStatus,                          DaysPhysHlthBad,Depressed, AlcoholDay, SmokeNow, PhysActive, HardDrugs)%>%
+#   na.omit()
+
+
+mydata <- subset(original, select = c(SleepTrouble,HHIncome, Age, BMI, MaritalStatus,                          DaysPhysHlthBad,Depressed, AlcoholDay, SmokeNow, PhysActive, HardDrugs))
+mydata <- na.omit(mydata)
+
+dim(mydata)
+
+# changing the character variables into numeric
+# mydata$SleepTrouble <- as.numeric(mydata$SleepTrouble)
+
+# Changing the numeric code in binary
+ 
+sleeptrouble <- rep(NA,dim(mydata)[1])
+sleeptrouble = ifelse(mydata$SleepTrouble=="Yes",1,0)
+mydata = as.data.frame(cbind(mydata, sleeptrouble))
+finaldata <- subset(mydata, select = - SleepTrouble)
+finaldata[,c(1,4,6,8:10)] <- sapply(finaldata[,c(1,4,6,8:10)], as.numeric)
+ 
+```
+
+## Splitting data into test and train
+
+*The data was divided into a 9-to-1 ratio, with 90% of the data allocated to the training set and 10% to the test set. This consistent split ratio was applied to all the classifiers used in the analysis. This ensures a uniform approach in assessing model performance and allows for a fair comparison of the classifiers across the same data subsets.*
+
+```{r}
+# splitting data into training and test in to ratio of 90/10
+
+set.seed(202111)
+index = sample.split(finaldata$sleeptrouble, SplitRatio = 0.9)
+train.orig = subset(finaldata, index == TRUE)
+test.orig = subset(finaldata, index == FALSE)
+paste0("size of Training data")
+dim(train.orig)
+paste0("size of Testing data")
+dim(test.orig)
+
+```
+
+## [1] Logistic Regression:
+
+```{r}
+
+############### Logistic regression #########
+model.log <- glm(sleeptrouble~., data = train.orig, family = binomial)
+summary(model.log)
+
+test.err=function(cutoff,model,test){
+  preds=rep(0,dim(test)[1])
+  probs=predict(model,newdata=test, type="response")
+  for(i in 1:length(probs)){
+    if(probs[i]>=cutoff){
+      preds[i]=1
+    }
+  }
+  cm=table(preds, test$sleeptrouble)
+  message("Confusion Matrix:");print(cm)
+  ac=((cm[1,1]+cm[2,2])/sum(cm))*100
+  message("Overall test accuracy (percentage) : ", round(ac,2))
+  Test_error <- round((100-ac),2)
+  paste0("Test error (percantage): ",Test_error)
+  Modelacc <-  round((cm[1,1]+cm[2,2])/sum(cm)*100,2)
+  print("Model Accuracy (Percentage):")
+  print(Modelacc)
+  print("True Positive Rate, TPR (percentage):")
+  TPR <- round(cm[2,2]/(cm[2,2]+cm[1,2])*100,2)
+  print(TPR)
+  print("False Postive Rate, FPR (percentage):")
+  spec=cm[1,1]/(cm[1,1]+cm[2,1])*100
+  FPR <- round((100-spec),2)
+  print(FPR)
+  return(as.data.frame(rbind(accuracy = ac,TPR,FPR)))
+  
+  
+}
+
+acc.log <- test.err(0.5,model.log, test.orig)
+colnames(acc.log) <- "Rate"
+acc.log
+
+
+############ Accuracy ############
+
+log.prediction <- predict(model.log, test.orig)
+MSE.log <- mean((log.prediction - test.orig$sleeptrouble)^2)
+
+
+paste0("MSE of the logistic model is ",round(MSE.log, digits = 3))
+
+
+
+###############visualizatation ############
+
+par(mfrow=c(1, 2))
+plot(model.log)
+
+
+####### ROC##############
+
+# will be required in question 2
+
+test_prob =  predict(model.log, test.orig, type = "response")
+test_roc = roc(test.orig$sleeptrouble ~ test_prob, plot = TRUE, print.auc = TRUE)
+
+```
+
+*The logistic regression analysis revealed the statistical significance of various variables in predicting the target outcome. Specifically, the total annual gross income and the total daily alcohol consumption were found to be statistically significant at the 0.05 significance level. Additionally, variables related to physical health in the past month, depression, hard drug use, and smoking also exhibited statistical significance in predicting the outcome.Moreover, the confusion matrix provides a snapshot of the model's performance. Out of a total of 185 data points, the model correctly predicted 126 of them (117 true positives and 9 true negatives). However, it also made incorrect predictions for 59 data points (50 false positives and 9 false negatives). This information is vital in assessing the classifier's overall accuracy and understanding its strengths and weaknesses in making predictions.*
+
+*The model exhibited an accuracy of 68.11%, indicating that it correctly predicted outcomes for a substantial portion of the data. The true positive rate, which represents the proportion of actual positive cases correctly identified, was 15.25%. On the other hand, the false-positive rate, which indicates the proportion of actual negative cases incorrectly identified as positive, was 7.14%. Additionally, the mean squared error (MSE) of the model was calculated to be 1.80, providing insights into the overall model performance in terms of the square differences between predicted and actual values.The logistic regression analysis revealed that several factors significantly influence sleep. These factors include physical health, depression, alcohol consumption, income, hard drug use, and smoking. These findings indicate that these variables play a meaningful role in affecting an individual's sleep, whether positively or negatively, and can be used to make predictions regarding sleep quality.*
+
+## [2] Neural network
+
+*In this context, I trained a neural network using the dataset previously selected for the earlier model. To prepare the data for modeling, I performed data scaling and then divided it into separate training and test sets. The neural network was configured with a hidden layer consisting of two neurons. To ensure reproducibility of results, I set the random seed to a specific value, 202111.*
+
+```{r}
+# install.packages("neuralnet")
+library(neuralnet)
+
+finaldata[,c(1,4,6,8:10)] <- sapply(finaldata[,c(1,4,6,8:10)], as.numeric)
+
+# Scale data for neural network
+max = apply(finaldata , 2 , max)
+min = apply(finaldata, 2 , min)
+scaled = as.data.frame(scale(finaldata, center = min, scale = max - min))
+
+# creating training and test set
+trainNN = scaled[index , ]
+testNN = scaled[-index , ]
+
+set.seed(202111)
+NN = neuralnet(sleeptrouble~., trainNN, hidden = 2 ,act.fct = "logistic", linear.output = F,lifesign = "minimal")
+
+
+## Prediction using neural network
+
+predict_testNNn =as.vector(predict(NN, testNN[,c(1:10)]))
+predict_testNN = (predict_testNNn * (max(finaldata$sleeptrouble) - min(finaldata$sleeptrouble))) + min(finaldata$sleeptrouble)
+
+
+# Calculate Mean Square Error (RMSE)
+# RMSE.NN = (sum((testNN$sleeptrouble - predict_testNN)^2) / nrow(testNN)) ^ 0.5
+MSE.nn = mean((testNN$sleeptrouble - predict_testNN)^2)
+
+paste0("MSE of the Neural network is ",round(MSE.nn, digits = 3))
+
+
+```
+
+```{r, cache = TRUE}
+
+# plot neural network
+plot(NN, cex = 0.8,rep = "best")
+
+
+# plot( predict_testNN, testNN$sleeptrouble,col='blue', pch=16, ylab = "predicted speeptrouble NN", xlab = "real sleeptrouble")+
+# abline(0,1)
+
+
+test_prob.nn = as.vector(predict(NN, testNN, type = "response"))
+test_roc.nn = (roc(testNN$sleeptrouble ~ test_prob.nn, plot = TRUE, print.auc = TRUE))
+
+```
+
+*The neural network's mean squared error (MSE) stands at 0.187. Additionally, an ROC curve was plotted to assess the classifier's performance. The ROC curve reveals that the model achieved an AUC (Area Under the Curve) score of 0.705, which is the highest among all the models built. However, it's important to note that the model has a relatively high false positive rate (FPR), contributing to an AUC score that, while good, could be improved.In the visual representation of the neural network, we observe forward propagation with two hidden layers. This particular model boasts a lower MSE of 0.18, indicating improved performance and suitability. Furthermore, the predictors used in this model make valuable contributions to predicting sleep trouble.*
+
+## [3] K - Nearest Neighbors
+
+```{r}
+library(class)
+
+# Finction for accuracy
+
+do.confusionknn =function(model,trues){
+  cm=table(model, trues)
+  message("Confusion Matrix:");print(cm)
+  ac=((cm[1,1]+cm[2,2])/sum(cm))*100
+  message("Overall test accuracy (percentage) : ", round(ac,2))
+  Test_error <- round((100-ac),2)
+  paste0("Test error (percantage): ",Test_error)
+  Modelacc <-  round((cm[1,1]+cm[2,2])/sum(cm)*100,2)
+  print("Model Accuracy (Percentage):")
+  print(Modelacc)
+  print("True Positive Rate, TPR (percentage):")
+  TPR <- round(cm[2,2]/(cm[2,2]+cm[1,2])*100,2)
+  print(TPR)
+  print("False Postive Rate, FPR (percentage):")
+  spec=cm[1,1]/(cm[1,1]+cm[2,1])*100
+  FPR <- round((100-spec),2)
+  print(FPR)
+  return(as.data.frame(rbind(accuracy = ac,TPR,FPR)))
+  
+}
+
+
+
+final.knn <- finaldata
+# changing factors into numeric 
+final.knn[,c(1,4,6,8:10)] <- sapply(final.knn[,c(1,4,6,8:10)], as.numeric)
+
+
+# Splitting data into test and train 
+set.seed(202111)
+index.k = sample.split(final.knn$sleeptrouble, SplitRatio = 0.9)
+train.k = subset(final.knn, index == TRUE)
+test.k = subset(final.knn, index == FALSE)
+
+
+#  Select the feature variables
+train.X=train.k[,1:10]
+# Set the target for training
+train.Y=train.k[,11]
+
+test.X=test.k[,1:10]
+test.Y=test.k[,11]
+
+
+# Chosing optimal value of K
+
+error <- c()
+set.seed(202111)
+# Create a list of neighbors
+neighbors <-c(1:20)
+for(i in seq_along(neighbors))
+{
+  # Perform a KNN regression fit
+  knn_res <- knn(train.X, test.X, train.Y, k = neighbors[i])
+  # Compute R sqaured
+  error[i] <- sqrt(sum((test.Y - as.numeric(knn_res))^2))
+}
+plot(error, type = "b",col = "Blue", main = " Error vs no of k", xlab = "No of K")
+
+
+# Fitting with the best value of K
+
+
+model.knn <- knn(train.X, test.X, cl=train.Y, k = 18, prob = TRUE)
+
+
+############## Accuracy ###########
+acc.knn <- do.confusionknn(model.knn, test.k$sleeptrouble)
+colnames(acc.knn) <- "Rate"
+acc.knn
+
+MSE.knn <- mean((test.Y - as.numeric(knn_res))^2)
+paste0("MSE of the KNN is ",round(MSE.knn, digits = 3))
+
+######## ROC curve#########
+test_prob.k =  attr(model.knn, "prob")
+test_roc.k = (roc(test.Y, test_prob.k, plot = TRUE, print.auc = TRUE))
+
+
+```
+
+*The K-Nearest Neighbors (KNN) model provides an estimate of the likelihood of sleep trouble within the dataset. To construct the KNN model, I employed cross-validation to determine the most suitable value of K for optimal performance. The range of K values examined extended from 1 to 20. Notably, the model exhibited minimal error when K equaled 18, with errors tending to rise as K exceeded this threshold.*
+
+*Additionally, a confusion matrix was generated, revealing that out of the total 185 data points, 128 were correctly predicted (113 true positives and 15 true negatives), while 57 data points were predicted incorrectly (44 false positives and 13 false negatives).The model's accuracy was 69.19%, indicating the proportion of correct predictions among all predictions. The true positive rate, representing the correctly predicted positive cases, stood at 25.42%, while the false positive rate, indicating the proportion of negative cases incorrectly predicted as positive, was 10.32%.Furthermore, the mean squared error (MSE) for the model was calculated to be 1.032, offering insights into the model's overall predictive accuracy.*
+
+*Based on the K-Nearest Neighbors (KNN) analysis, it became evident that sleep quality is influenced, whether positively or negatively, by factors such as poor physical health, depression, alcohol consumption, income, hard drug use, and smoking. These variables were identified as having a significant impact on an individual's sleep patterns.*
+
+## [4] Linear discriminant analysis (LDA)
+
+```{r}
+library(MASS)
+model.lda <- lda(sleeptrouble~., data = train.orig)
+# model.lda
+
+
+confusion_lqda =function(model,data){
+  preds=(predict(model,newdata=data,type="response"))$class
+  vals=predict(model,newdata=data,type="response")
+  cm=table(preds,data$sleeptrouble)
+  message("Confusion Matrix:");print(cm)
+  ac=((cm[1,1]+cm[2,2])/sum(cm))*100
+  message("Overall test accuracy (percentage) : ", round(ac,2))
+  Test_error <- round((100-ac),2)
+  paste0("Test error (percantage): ",Test_error)
+  Modelacc <-  round((cm[1,1]+cm[2,2])/sum(cm)*100,2)
+  print("Model Accuracy (Percentage):")
+  print(Modelacc)
+  print("True Positive Rate, TPR (percentage):")
+  TPR <- round(cm[2,2]/(cm[2,2]+cm[1,2])*100,2)
+  print(TPR)
+  print("False Postive Rate, FPR (percentage):")
+  spec=cm[1,1]/(cm[1,1]+cm[2,1])*100
+  FPR <- round((100-spec),2)
+  print(FPR)
+  return(as.data.frame(rbind(accuracy = ac,TPR,FPR)))
+  
+}
+
+acc.lda <- confusion_lqda(model.lda, test.orig)
+colnames(acc.lda) <- "Rate"
+acc.lda
+
+############ Accuracy ############
+
+log.prediction.lda <- predict(model.lda, test.orig)
+MSE.lda <- mean((log.prediction.lda$x - test.orig$sleeptrouble)^2)
+
+paste0("MSE of the LDA model is ",round(MSE.lda, digits = 3))
+
+##############3 Visualization #####
+
+par(mfrow=c(1,1))
+plot(log.prediction.lda$posterior[,2], log.prediction.lda$class, col=test.orig$sleeptrouble+10)
+
+plot(model.lda)
+
+
+
+test_prob.lda =  predict(model.lda, test.orig, type = "response")$x
+test_roc.lda = roc(test.orig$sleeptrouble ~ test_prob.lda, plot = TRUE, print.auc = TRUE)
+
+
+```
+
+*The LDA model was constructed using the selected variables, and a confusion matrix was generated. The results indicate that out of the total 185 data points, 125 were predicted correctly (116 true positives and 9 true negatives), while 60 data points were predicted incorrectly (50 false positives and 10 false negatives).*
+
+*The model's accuracy stood at 67.57%, signifying the proportion of accurate predictions out of all predictions made. The true positive rate, representing correctly identified positive cases, was 15.25%, while the false positive rate, indicating the proportion of negative cases incorrectly identified as positive, was 7.94%. The mean squared error (MSE) for the model was calculated at 1.056.*
+
+*In addition, the analysis involved creating plots to illustrate the distribution of predicted data and the class predictions.*
+
+*From the LDA analysis, it is evident that sleep quality is influenced, whether positively or negatively, by factors such as poor physical health, depression, alcohol consumption, income, hard drug use, and smoking. However, it's important to note that the classifier was not entirely accurate in its predictions.*
+
+## [5] Quadratic discriminant analysis (QDA)
+
+```{r}
+# For qda
+model.qda <- qda(sleeptrouble~., data = train.orig)
+
+
+acc.qda <- confusion_lqda(model.qda, test.orig)
+colnames(acc.qda) <- "Rate"
+acc.qda
+
+
+log.prediction.qda <- predict(model.qda, test.orig, prob = TRUE)
+MSE.qda <- mean((log.prediction.qda$posterior[,2] - test.orig$sleeptrouble)^2)
+
+paste0("MSE of the QDA model is ",round(MSE.qda, digits = 3))
+
+
+#### Visualization######
+
+log.prediction.qda <- predict(model.qda, test.orig, type= "response")
+par(mfrow=c(1,1))
+plot(log.prediction.qda$posterior[,2], log.prediction.qda$class, col=test.orig$sleeptrouble+10)
+
+### roc ###
+test_prob.qda =  predict(model.qda, test.orig, type = "response")$posterior[,2]
+test_roc.qda = roc(test.orig$sleeptrouble ~ test_prob.qda, plot = TRUE, print.auc = TRUE)
+
+
+```
+
+*The QDA model was applied to the dataset, and a corresponding confusion matrix was generated. The results indicate that out of the total 185 data points, 120 were accurately predicted (107 true positives and 13 true negatives), while 65 data points were incorrectly predicted (19 false positives and 46 false negatives).*
+
+*The model achieved an accuracy of 64.86%, representing the proportion of correct predictions among all predictions. The true positive rate, reflecting correctly identified positive cases, stood at 22.03%, while the false positive rate, indicating the proportion of negative cases incorrectly identified as positive, was 15.08%. The model's mean squared error (MSE) was calculated at 0.258.*
+
+*Additionally, visualizations were created to illustrate the distribution of predicted data.*
+
+*While the analysis revealed that factors such as poor physical health, depression, alcohol consumption, income, hard drug use, and smoking have a significant impact on an individual's sleep, it's worth noting that the classifier had limitations in making accurate predictions. This is evident from the model's AUC (Area Under the Curve) of 0.573, which is considered subpar and lower than other models, indicating room for improvement in predictive accuracy.*
+
+```{r}
+
+tablecom <- round(as.data.frame(rbind(MSE.log, MSE.nn, MSE.knn,MSE.lda, MSE.qda)), digits = 4)
+colnames(tablecom)<-c("ERROR")
+
+knitr::kable(tablecom, digits = 3,
+             caption = "MSE of all the classifier")
+
+##################### Test accuracy ##########################
+
+
+tablecom1 <- round(as.data.frame(cbind(acc.log, acc.knn,acc.lda, acc.qda)), digits = 4)
+colnames(tablecom1)<-c("LogReg","KNN","LDA","QDA")
+
+knitr::kable(tablecom1, digits = 3,
+             caption = " Test accuracy of all the classifier")
+
+
+
+```
+
+*To determine the most effective model, I conducted an analysis using multiple evaluation metrics, including Mean Squared Error (MSE), False Positive Rate (FPR), True Positive Rate (TPR), and the ROC curve, which collectively assess the model's performance.When assessing the MSE, both the neural network and QDA displayed the lowest values, indicating relatively accurate predictions. However, I would not recommend QDA due to its elevated False Positive Rate, which raises concerns about its ability to classify effectively.The Area Under the Curve (AUC) for each model is as follows: Logistic Regression = 0.580, Neural Network = 0.187, K-Nearest Neighbors (KNN) = 0.616, Linear Discriminant Analysis (LDA) = 0.580, and Quadratic Discriminant Analysis (QDA) = 0.573. AUC values greater than 0.5 are generally considered good, while values around 0.5 are considered less favorable.Given the neural network's combination of the lowest MSE and the highest AUC, it appears to be the most reliable classifier for this dataset. Therefore, I would recommend using the neural network model for the data analysis.*
+
+```{r}
+# Source
+# https://www.geeksforgeeks.org/the-validation-set-approach-in-r-programming/
+# https://cran.r-project.org/web/packages/olsrr/vignettes/variable_selection.html
+# https://datascienceplus.com/how-to-perform-logistic-regression-lda-qda-in-r/
+# https://uc-r.github.io/discriminant_analysis
+# https://stackoverflow.com/questions/36048856/r-knn-knn3train-caret-extract-probabilities
+# https://discuss.analyticsvidhya.com/t/how-to-resolve-error-na-nan-inf-in-foreign-function-call-arg-6-in-knn/7280
+# https://daviddalpiaz.github.io/r4sl/logistic-regression.html
+# https://www.analyticsvidhya.com/blog/2017/09/creating-visualizing-neural-network-in-r/
+# https://community.rstudio.com/t/neural-net-plot-not-showing-up-on-the-html-rendered-from-a-r-markdown/38929/3
+
+
+
+
+
+
+```
