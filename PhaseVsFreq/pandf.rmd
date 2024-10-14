@@ -1,0 +1,82 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(readxl)
+ #  path <- file.choose()
+    #"C:\\Users\\achal\\Documents\\Acamedic_materials\\GitProjects\\Kalyani_Data\\eis-8-16.xlsx")# Choose the xlsx file interactively
+  data <- read_excel("C:\\Users\\achal\\Documents\\Acamedic_materials\\GitProjects\\Kalyani_Data\\eis-8-16.xlsx")
+  head(data)
+```
+
+```{r}
+
+# Set max frequency and initialize index
+f_max <- 1000000
+f_max_index <- 0
+
+# Extract the number of electrodes
+n <- ncol(data)
+anzahl_elektroden <- n / 3
+
+
+```
+
+```{r}
+# Extract frequency column
+frequenz <- data[[1]]
+# Find the index where frequency exceeds max frequency
+for (i in seq_along(frequenz)) {
+  if (frequenz[i] > f_max) {
+    f_max_index <- i
+    break
+  }
+}
+
+# Remove data beyond the max frequency index
+if (f_max_index > 0) {
+  data <- data[-(1:f_max_index), ]
+}
+
+
+```
+
+
+```{r}
+
+# Plot setup
+#par(mfrow = c(2, 1), mar = c(4, 4, 2, 2), oma = c(0, 0, 0, 0))
+#layout(matrix(1:2, nrow = 1, ncol = 1), heights = c(1, 1))
+
+# Plot amplitude
+for (i in 0:(anzahl_elektroden - 1)) {
+  frequenz <- data[[1 + 3 * i]]
+  amplitude <- data[[2 + 3 * i]]
+  amplitude_filtered <- stats::filter(amplitude, rep(1/7, 7), circular = TRUE)
+  
+  plot(frequenz, amplitude_filtered, log = "xy", type = "l",
+       xlim = c(10, f_max), ylab = "Z [Ω]", col = i + 1)
+  grid()
+  par(new = TRUE)
+}
+par(new = FALSE)
+
+# Plot phase
+for (i in 0:(anzahl_elektroden - 1)) {
+  frequenz <- data[[1 + 3 * i]]
+  phase <- data[[3 + 3 * i]]
+  phase_filtered <- stats::filter(phase, rep(1/7, 7), circular = TRUE)
+  
+  plot(frequenz, phase_filtered, log = "x", type = "l",
+       xlim = c(10, f_max), ylim = range(phase_filtered), xlab = "f [Hz]", ylab = expression(phi * " [°]"), col = i + 1)
+  grid()
+  par(new = TRUE)
+}
+par(new = FALSE)
+
+# Set plot background to white
+par(bg = "white")
+
+```
